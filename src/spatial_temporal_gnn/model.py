@@ -48,11 +48,14 @@ class SpatialTemporalGNN(nn.Module):
         Computes the forward pass of the model.
     """
     def __init__(self, n_in_features: int, n_out_features: int,
-                 n_in_timesteps: int, n_out_timesteps: int, A: np.ndarray,
-                 device: str,
-                 n_hidden_features: int = 64,
-                 n_attention_heads: int = 4,
-                 dropout: float = 0.2) -> None:
+             n_in_timesteps: int, n_out_timesteps: int, A: np.ndarray,
+             device: str,
+             n_hidden_features: int = 64,
+             n_attention_heads: int = 4,
+             dropout: float = 0.2,
+             use_graph: bool = True,
+             use_gru: bool = True,
+             use_transformer: bool = True) -> None:
         """Initialize the Spatial-Temporal Graph Neural Network.
 
         Parameters
@@ -79,6 +82,9 @@ class SpatialTemporalGNN(nn.Module):
         """
         super().__init__()
         # Set the number of hidden features.
+        self.use_graph = use_graph
+        self.use_gru = use_gru
+        self.use_transformer = use_transformer
         self.n_hidden_features = n_hidden_features
         self.dropout = nn.Dropout(p=dropout)
 
@@ -159,26 +165,36 @@ class SpatialTemporalGNN(nn.Module):
         outs = []
 
         for i in range(len_timeseries):
-            # Get the S_GNN output state at the given timestamp.
-            out_state = self.s_gnns[i](out[:,i])
-            # Get the hidden state at the previous timestamp.
-            if i > 0:
-                hidden_state = self.hidden_s_gnns[i - 1](hidden_state)
+
+    # Graph block
+            if self.use_graph:
+                out_state = self.s_gnns[i](out[:, i])
             else:
+                out_state = out[:, i]
+        
+            # Hidden state initialization / refinement
+            if i == 0:
                 hidden_state = base_hidden_state
-            # Get the GRU hidden state output at the given timestamp.
-            hidden_state = self.grus[i](out_state, hidden_state)
+            else:
+                if self.use_graph:
+                    hidden_state = self.hidden_s_gnns[i - 1](hidden_state)
+                # if graph disabled, keep previous hidden_state unchanged
+        
+            # GRU block
+            if self.use_gru:
+                hidden_state = self.grus[i](out_state, hidden_state)
+            else:
+                hidden_state = out_state
+        
             hidden_state = self.dropout(hidden_state)
             outs.append(hidden_state)
-
         # Stack the GRU modules results for each timestamp.
         out = torch.stack(outs, 1)
 
         # Get positional encoding and combine it to the result.
-        out = self.positional_encoder(out)
-
-        # Get the transformer layer results.
-        out = self.transformer(out)
+        if self.use_transformer:
+            out = self.positional_encoder(out)
+            out = self.transformer(out)
 
         # Apply the convolution to extract the output timesteps.
         if self.timesteps_convolution is not None:
