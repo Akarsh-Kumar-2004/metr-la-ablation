@@ -54,7 +54,7 @@ class SpatialTemporalGNN(nn.Module):
              n_attention_heads: int = 4,
              dropout: float = 0.2,
              use_graph: bool = True,
-             use_gru: bool = True,
+             use_gru: bool = False,
              use_transformer: bool = True) -> None:
         """Initialize the Spatial-Temporal Graph Neural Network.
 
